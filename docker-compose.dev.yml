@@ -3,7 +3,7 @@ version: '3.8'
 services:
   api:
     build: .
-    container_name: inventory-api
+    container_name: inventory-api-dev
     ports:
       - "3000:3000"
     environment:
@@ -24,27 +24,34 @@ services:
     volumes:
       - ./logs:/app/logs
       - ./uploads:/app/uploads
+      - .:/app
+      - /app/node_modules
     networks:
       - inventory-network
     restart: unless-stopped
 
   frontend:
-    build: ./inventory-frontend
-    container_name: inventory-frontend
+    build: 
+      context: ./inventory-frontend
+      dockerfile: Dockerfile.dev
+    container_name: inventory-frontend-dev
     ports:
-      - "80:80"
+      - "5173:5173"
     environment:
-      - NODE_ENV=production
+      - NODE_ENV=development
       - VITE_API_BASE_URL=http://localhost:3000/api
     depends_on:
       - api
+    volumes:
+      - ./inventory-frontend:/app
+      - /app/node_modules
     networks:
       - inventory-network
     restart: unless-stopped
 
   postgres:
     image: postgres:15-alpine
-    container_name: inventory-postgres
+    container_name: inventory-postgres-dev
     environment:
       - POSTGRES_DB=inventory_db
       - POSTGRES_USER=inventory_user
@@ -52,7 +59,7 @@ services:
     ports:
       - "5433:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data_dev:/var/lib/postgresql/data
       - ./migrations:/docker-entrypoint-initdb.d
     networks:
       - inventory-network
@@ -65,7 +72,7 @@ services:
 
   adminer:
     image: adminer:latest
-    container_name: inventory-adminer
+    container_name: inventory-adminer-dev
     ports:
       - "8080:8080"
     environment:
@@ -77,7 +84,7 @@ services:
     restart: unless-stopped
 
 volumes:
-  postgres_data:
+  postgres_data_dev:
 
 networks:
   inventory-network:

@@ -77,18 +77,86 @@ router.get('/test', (req, res) => {
  *       401:
  *         description: Invalid credentials
  */
-router.post('/login', (req, res) => {
-  res.json({
-    message: 'Login successful',
-    user: {
-      id: '550e8400-e29b-41d4-a716-446655440000',
-      email: 'admin@inventory.com',
-      role: 'admin'
-    },
-    accessToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
-    refreshToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
-    expiresIn: 900
-  });
+router.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // Validate input
+    if (!email || !password) {
+      return res.status(400).json({
+        error: 'Validation failed',
+        message: 'Email and password are required'
+      });
+    }
+
+    // Find user by email
+    const user = await User.findByEmail(email);
+    if (!user) {
+      return res.status(401).json({
+        error: 'Authentication failed',
+        message: 'Invalid email or password'
+      });
+    }
+
+    // Verify password
+    const isValidPassword = await User.verifyPassword(password, user.password_hash);
+    if (!isValidPassword) {
+      return res.status(401).json({
+        error: 'Authentication failed',
+        message: 'Invalid email or password'
+      });
+    }
+
+    // Generate JWT tokens
+    const jwt = require('jsonwebtoken');
+    const accessToken = jwt.sign(
+      { 
+        userId: user.id, 
+        email: user.email, 
+        role: user.role 
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN || '15m' }
+    );
+
+    const refreshToken = jwt.sign(
+      { 
+        userId: user.id,
+        type: 'refresh'
+      },
+      process.env.JWT_REFRESH_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    // Save refresh token to database
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+    await User.saveRefreshToken(user.id, refreshToken, expiresAt);
+
+    // Return user data (without password)
+    const userData = {
+      id: user.id,
+      first_name: user.first_name,
+      last_name: user.last_name,
+      email: user.email,
+      phone: user.phone,
+      role: user.role
+    };
+
+    res.json({
+      message: 'Login successful',
+      user: userData,
+      accessToken,
+      refreshToken,
+      expiresIn: 900
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({
+      error: 'Login failed',
+      message: error.message
+    });
+  }
 });
 
 /**
@@ -104,20 +172,35 @@ router.post('/login', (req, res) => {
  *           schema:
  *             type: object
  *             required:
- *               - name
+ *               - first_name
+ *               - last_name
  *               - email
  *               - password
+ *               - confirm_password
+ *               - accept_terms
  *             properties:
- *               name:
+ *               first_name:
  *                 type: string
- *                 example: "John Doe"
+ *                 example: "John"
+ *               last_name:
+ *                 type: string
+ *                 example: "Doe"
  *               email:
  *                 type: string
  *                 format: email
  *                 example: "john@example.com"
+ *               phone:
+ *                 type: string
+ *                 example: "+1234567890"
  *               password:
  *                 type: string
  *                 example: "Password123!"
+ *               confirm_password:
+ *                 type: string
+ *                 example: "Password123!"
+ *               accept_terms:
+ *                 type: boolean
+ *                 example: true
  *     responses:
  *       201:
  *         description: User registered successfully
@@ -135,12 +218,18 @@ router.post('/login', (req, res) => {
  *                     id:
  *                       type: string
  *                       example: "550e8400-e29b-41d4-a716-446655440001"
- *                     name:
+ *                     first_name:
  *                       type: string
- *                       example: "John Doe"
+ *                       example: "John"
+ *                     last_name:
+ *                       type: string
+ *                       example: "Doe"
  *                     email:
  *                       type: string
  *                       example: "john@example.com"
+ *                     phone:
+ *                       type: string
+ *                       example: "+1234567890"
  *                     role:
  *                       type: string
  *                       example: "user"
@@ -149,16 +238,86 @@ router.post('/login', (req, res) => {
  *       409:
  *         description: User already exists
  */
-router.post('/register', (req, res) => {
-  res.status(201).json({
-    message: 'User registered successfully',
-    user: {
-      id: '550e8400-e29b-41d4-a716-446655440001',
-      name: 'John Doe',
-      email: 'john@example.com',
-      role: 'user'
+router.post('/register', async (req, res) => {
+  try {
+    const { first_name, last_name, email, phone, password, confirm_password, accept_terms } = req.body;
+
+    // Validation
+    if (!first_name || !last_name || !email || !password || !confirm_password) {
+      return res.status(400).json({
+        error: 'Validation failed',
+        message: 'All required fields must be provided'
+      });
     }
-  });
+
+    if (password !== confirm_password) {
+      return res.status(400).json({
+        error: 'Validation failed',
+        message: 'Passwords do not match'
+      });
+    }
+
+    if (!accept_terms) {
+      return res.status(400).json({
+        error: 'Validation failed',
+        message: 'You must accept the terms and conditions'
+      });
+    }
+
+    // Password strength validation
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+    if (!passwordRegex.test(password)) {
+      return res.status(400).json({
+        error: 'Validation failed',
+        message: 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character'
+      });
+    }
+
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({
+        error: 'Validation failed',
+        message: 'Please provide a valid email address'
+      });
+    }
+
+    // Create user
+    const userData = {
+      first_name,
+      last_name,
+      email,
+      phone: phone || null,
+      password,
+      role: 'user'
+    };
+
+    const user = await User.create(userData);
+
+    res.status(201).json({
+      message: 'User registered successfully',
+      user: {
+        id: user.id,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role
+      }
+    });
+  } catch (error) {
+    console.error('Registration error:', error);
+    if (error.message === 'Email already exists') {
+      return res.status(409).json({
+        error: 'Registration failed',
+        message: 'Email already exists'
+      });
+    }
+    res.status(500).json({
+      error: 'Registration failed',
+      message: error.message
+    });
+  }
 });
 
 /**

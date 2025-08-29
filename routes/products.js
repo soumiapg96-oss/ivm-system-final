@@ -16,7 +16,7 @@ const {
 } = require('../controllers/productController');
 
 // Import middleware
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, requireRole } = require('../middleware/auth');
 
 // Apply authentication middleware to all routes
 router.use(authenticateToken);
@@ -134,6 +134,11 @@ router.get('/', getAllProducts);
  *       500:
  *         description: Internal server error
  */
+// Specific routes must come before parameterized routes
+router.get('/low-stock', requireRole('admin'), getLowStockProducts);
+router.get('/out-of-stock', requireRole('admin'), getOutOfStockProducts);
+router.get('/inventory/summary', requireRole('admin'), getInventorySummary);
+
 router.get('/:id', getProductById);
 
 /**
@@ -195,7 +200,7 @@ router.get('/:id', getProductById);
  *       500:
  *         description: Internal server error
  */
-router.post('/', createProduct);
+router.post('/', requireRole('admin'), createProduct);
 
 /**
  * @swagger
@@ -254,7 +259,7 @@ router.post('/', createProduct);
  *       500:
  *         description: Internal server error
  */
-router.put('/:id', updateProduct);
+router.put('/:id', requireRole('admin'), updateProduct);
 
 /**
  * @swagger
@@ -281,7 +286,7 @@ router.put('/:id', updateProduct);
  *       500:
  *         description: Internal server error
  */
-router.delete('/:id', deleteProduct);
+router.delete('/:id', requireRole('admin'), deleteProduct);
 
 /**
  * @swagger
@@ -392,95 +397,6 @@ router.patch('/:id/quantity', updateQuantity);
  */
 router.get('/:id/transactions', getProductTransactions);
 
-/**
- * @swagger
- * /api/products/low-stock:
- *   get:
- *     summary: Get low stock products
- *     tags: [Products]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: threshold
- *         schema:
- *           type: integer
- *           default: 10
- *         description: Low stock threshold
- *     responses:
- *       200:
- *         description: Low stock products retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 products:
- *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/Product'
- *       401:
- *         description: Unauthorized
- */
-router.get('/low-stock', getLowStockProducts);
 
-/**
- * @swagger
- * /api/products/out-of-stock:
- *   get:
- *     summary: Get out of stock products
- *     tags: [Products]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Out of stock products retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 products:
- *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/Product'
- *       401:
- *         description: Unauthorized
- */
-router.get('/out-of-stock', getOutOfStockProducts);
-
-/**
- * @swagger
- * /api/products/inventory/summary:
- *   get:
- *     summary: Get inventory summary statistics
- *     tags: [Products]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Inventory summary retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 summary:
- *                   type: object
- *                   properties:
- *                     totalProducts:
- *                       type: integer
- *                     totalValue:
- *                       type: number
- *                     lowStockCount:
- *                       type: integer
- *                     outOfStockCount:
- *                       type: integer
- *                     categoriesCount:
- *                       type: integer
- *       401:
- *         description: Unauthorized
- */
-router.get('/inventory/summary', getInventorySummary);
 
 module.exports = router;

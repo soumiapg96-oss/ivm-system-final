@@ -181,13 +181,13 @@ export function Users() {
             Manage system users and permissions
           </p>
         </div>
-        <button
+        <Button
           onClick={() => setShowCreateModal(true)}
-          className="btn btn-primary mt-4 sm:mt-0"
+          className="mt-4 sm:mt-0"
         >
           <Plus className="h-4 w-4 mr-2" />
           Add User
-        </button>
+        </Button>
       </div>
 
       {/* Users Table */}
@@ -248,7 +248,9 @@ export function Users() {
               </TableHeader>
               <TableBody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                 {users.map((user) => (
-                  <TableRow key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                  <TableRow key={user.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${
+                    currentUser?.id === user.id ? 'bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500' : ''
+                  }`}>
                     <TableCell className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
                         <div className="h-10 w-10 rounded-full bg-primary-500 flex items-center justify-center">

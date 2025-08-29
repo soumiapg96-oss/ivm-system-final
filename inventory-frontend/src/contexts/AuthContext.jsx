@@ -42,7 +42,7 @@ export function AuthProvider({ children }) {
   const generateValidToken = async (credentials) => {
     try {
       // Call the backend to generate a valid token
-      const response = await fetch('http://localhost:3001/api/auth/generate-token', {
+      const response = await fetch('http://localhost:3000/api/auth/generate-token', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -65,6 +65,7 @@ export function AuthProvider({ children }) {
   const login = async (credentials) => {
     try {
       setError(null)
+      setLoading(true)
       
       // First, try to get user info from login
       const response = await authAPI.login(credentials)
@@ -88,6 +89,8 @@ export function AuthProvider({ children }) {
     } catch (error) {
       setError(error.response?.data?.message || 'Login failed')
       throw error
+    } finally {
+      setLoading(false)
     }
   }
 

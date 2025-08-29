@@ -5,22 +5,133 @@ const router = express.Router();
 const {
   getAllUsers,
   getUserById,
+  createUser,
   updateUser,
-  deleteUser
+  deleteUser,
+  getProfile,
+  updateProfile,
+  changePassword
 } = require('../controllers/userController');
 
 // Import middleware
 const { authenticateToken, requireRole } = require('../middleware/auth');
 
-// Apply authentication and admin role middleware to all routes
+// Apply authentication middleware to all routes
 router.use(authenticateToken);
-router.use(requireRole('admin'));
+
+/**
+ * @swagger
+ * /api/users/profile:
+ *   get:
+ *     summary: Get current user profile
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Profile retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 profile:
+ *                   $ref: '#/components/schemas/User'
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Internal server error
+ */
+router.get('/profile', getProfile);
+
+/**
+ * @swagger
+ * /api/users/profile:
+ *   put:
+ *     summary: Update current user profile
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               first_name:
+ *                 type: string
+ *               last_name:
+ *                 type: string
+ *               email:
+ *                 type: string
+ *               phone:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Profile updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 profile:
+ *                   $ref: '#/components/schemas/User'
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Internal server error
+ */
+router.put('/profile', updateProfile);
+
+/**
+ * @swagger
+ * /api/users/profile/password:
+ *   put:
+ *     summary: Change current user password
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - currentPassword
+ *               - newPassword
+ *             properties:
+ *               currentPassword:
+ *                 type: string
+ *               newPassword:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Password changed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Internal server error
+ */
+router.put('/profile/password', changePassword);
 
 /**
  * @swagger
  * /api/users:
  *   get:
- *     summary: Get all users with pagination and filtering (Admin only)
+ *     summary: Get all users (admin only)
  *     tags: [Users]
  *     security:
  *       - bearerAuth: []
@@ -29,25 +140,12 @@ router.use(requireRole('admin'));
  *         name: page
  *         schema:
  *           type: integer
- *           default: 1
  *         description: Page number
  *       - in: query
  *         name: limit
  *         schema:
  *           type: integer
- *           default: 10
  *         description: Number of items per page
- *       - in: query
- *         name: search
- *         schema:
- *           type: string
- *         description: Search term for user email
- *       - in: query
- *         name: role
- *         schema:
- *           type: string
- *           enum: [user, admin]
- *         description: Filter by user role
  *     responses:
  *       200:
  *         description: Users retrieved successfully
@@ -67,17 +165,17 @@ router.use(requireRole('admin'));
  *       401:
  *         description: Unauthorized
  *       403:
- *         description: Admin access required
+ *         description: Forbidden (admin only)
  *       500:
  *         description: Internal server error
  */
-router.get('/', getAllUsers);
+router.get('/', requireRole('admin'), getAllUsers);
 
 /**
  * @swagger
  * /api/users/{id}:
  *   get:
- *     summary: Get a user by ID (Admin only)
+ *     summary: Get user by ID (admin only)
  *     tags: [Users]
  *     security:
  *       - bearerAuth: []
@@ -87,7 +185,6 @@ router.get('/', getAllUsers);
  *         required: true
  *         schema:
  *           type: string
- *           format: uuid
  *         description: User ID
  *     responses:
  *       200:
@@ -104,19 +201,76 @@ router.get('/', getAllUsers);
  *       401:
  *         description: Unauthorized
  *       403:
- *         description: Admin access required
+ *         description: Forbidden (admin only)
  *       404:
  *         description: User not found
  *       500:
  *         description: Internal server error
  */
-router.get('/:id', getUserById);
+router.get('/:id', requireRole('admin'), getUserById);
+
+/**
+ * @swagger
+ * /api/users:
+ *   post:
+ *     summary: Create new user (admin only)
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - first_name
+ *               - last_name
+ *               - email
+ *               - password
+ *               - role
+ *             properties:
+ *               first_name:
+ *                 type: string
+ *               last_name:
+ *                 type: string
+ *               email:
+ *                 type: string
+ *               phone:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *               role:
+ *                 type: string
+ *                 enum: [admin, user]
+ *     responses:
+ *       201:
+ *         description: User created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 user:
+ *                   $ref: '#/components/schemas/User'
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden (admin only)
+ *       500:
+ *         description: Internal server error
+ */
+router.post('/', requireRole('admin'), createUser);
 
 /**
  * @swagger
  * /api/users/{id}:
  *   put:
- *     summary: Update a user (Admin only)
+ *     summary: Update user (admin only)
  *     tags: [Users]
  *     security:
  *       - bearerAuth: []
@@ -126,7 +280,6 @@ router.get('/:id', getUserById);
  *         required: true
  *         schema:
  *           type: string
- *           format: uuid
  *         description: User ID
  *     requestBody:
  *       required: true
@@ -135,12 +288,17 @@ router.get('/:id', getUserById);
  *           schema:
  *             type: object
  *             properties:
+ *               first_name:
+ *                 type: string
+ *               last_name:
+ *                 type: string
  *               email:
  *                 type: string
- *                 format: email
+ *               phone:
+ *                 type: string
  *               role:
  *                 type: string
- *                 enum: [user, admin]
+ *                 enum: [admin, user]
  *     responses:
  *       200:
  *         description: User updated successfully
@@ -153,24 +311,22 @@ router.get('/:id', getUserById);
  *                   type: string
  *                 user:
  *                   $ref: '#/components/schemas/User'
- *       400:
- *         description: Bad request
  *       401:
  *         description: Unauthorized
  *       403:
- *         description: Admin access required
+ *         description: Forbidden (admin only)
  *       404:
  *         description: User not found
  *       500:
  *         description: Internal server error
  */
-router.put('/:id', updateUser);
+router.put('/:id', requireRole('admin'), updateUser);
 
 /**
  * @swagger
  * /api/users/{id}:
  *   delete:
- *     summary: Delete a user (Admin only)
+ *     summary: Delete user (admin only)
  *     tags: [Users]
  *     security:
  *       - bearerAuth: []
@@ -180,20 +336,26 @@ router.put('/:id', updateUser);
  *         required: true
  *         schema:
  *           type: string
- *           format: uuid
  *         description: User ID
  *     responses:
  *       200:
  *         description: User deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
  *       401:
  *         description: Unauthorized
  *       403:
- *         description: Admin access required
+ *         description: Forbidden (admin only)
  *       404:
  *         description: User not found
  *       500:
  *         description: Internal server error
  */
-router.delete('/:id', deleteUser);
+router.delete('/:id', requireRole('admin'), deleteUser);
 
 module.exports = router;

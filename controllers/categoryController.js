@@ -2,9 +2,9 @@ const Category = require('../models/Category');
 
 const getAllCategories = async (req, res) => {
   try {
-    const { page = 1, limit = 10 } = req.query;
+    const { page = 1, limit = 10, search } = req.query;
     
-    const result = await Category.findAll(parseInt(page), parseInt(limit));
+    const result = await Category.findAll(parseInt(page), parseInt(limit), search);
 
     res.json({
       message: 'Categories retrieved successfully',
@@ -26,7 +26,7 @@ const getAllCategoriesWithCount = async (req, res) => {
     res.json({
       message: 'Categories retrieved successfully',
       count: categories.length,
-      categories
+      data: categories
     });
   } catch (error) {
     console.error('Get all categories with count error:', error);

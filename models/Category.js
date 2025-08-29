@@ -42,23 +42,36 @@ class Category {
     return result.rows[0];
   }
 
-  static async findAll(page = 1, limit = 10) {
+  static async findAll(page = 1, limit = 10, search = null) {
     const offset = (page - 1) * limit;
+    
+    let whereClause = '';
+    let countWhereClause = '';
+    let values = [limit, offset];
+    let countValues = [];
+    
+    if (search) {
+      whereClause = 'WHERE c.name ILIKE $3';
+      countWhereClause = 'WHERE name ILIKE $1';
+      values.push(`%${search}%`);
+      countValues.push(`%${search}%`);
+    }
     
     const query = `
       SELECT c.*, COUNT(p.id) as product_count
       FROM categories c
       LEFT JOIN products p ON c.id = p.category_id
+      ${whereClause}
       GROUP BY c.id
       ORDER BY c.created_at DESC
       LIMIT $1 OFFSET $2
     `;
     
-    const countQuery = 'SELECT COUNT(*) FROM categories';
+    const countQuery = `SELECT COUNT(*) FROM categories ${countWhereClause}`;
     
     const [result, countResult] = await Promise.all([
-      db.query(query, [limit, offset]),
-      db.query(countQuery)
+      db.query(query, values),
+      db.query(countQuery, countValues)
     ]);
     
     return {
@@ -120,7 +133,7 @@ class Category {
       ORDER BY c.name ASC
     `;
     const result = await db.query(query);
-    return result.rows;
+    return snakeToCamel(result.rows);
   }
 }
 

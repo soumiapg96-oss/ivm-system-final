@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const API_BASE_URL = 'http://localhost:3001/api'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api'
 
 // Create axios instance
 const api = axios.create({
@@ -137,6 +137,9 @@ export const usersAPI = {
   create: (data) => api.post('/users', data),
   update: (id, data) => api.put(`/users/${id}`, data),
   delete: (id) => api.delete(`/users/${id}`),
+  getProfile: () => api.get('/users/profile'),
+  updateProfile: (profileData) => api.put('/users/profile', profileData),
+  changePassword: (passwordData) => api.put('/users/profile/password', passwordData),
 }
 
 // Reports API
@@ -144,6 +147,9 @@ export const reportsAPI = {
   getStockLevels: () => api.get('/reports/stock-levels'),
   getInventoryValue: () => api.get('/reports/inventory-value'),
   getProductQuantityHistory: (id) => api.get(`/reports/products/${id}/quantity-history`),
+  getRecentActivity: (limit = 20) => api.get('/reports/recent-activity', { params: { limit } }),
+  getDashboardCharts: () => api.get('/reports/dashboard/charts'),
+  getReportsSummary: (filters = {}) => api.get('/reports/summary', { params: filters }),
 }
 
 export default api

@@ -15,23 +15,21 @@ const navigation = [
 ]
 
 const getNavigation = (userRole) => {
-  const baseNavigation = [
-    { name: 'Dashboard', href: '/', icon: 'LayoutDashboard' },
-    { name: 'Products', href: '/products', icon: 'Package' },
-    { name: 'Reports', href: '/reports', icon: 'BarChart3' },
-  ]
-
   // Admin gets access to everything
   if (userRole === 'admin') {
     return [
-      ...baseNavigation,
+      { name: 'Dashboard', href: '/', icon: 'LayoutDashboard' },
+      { name: 'Products', href: '/products', icon: 'Package' },
+      { name: 'Reports', href: '/reports', icon: 'BarChart3' },
       { name: 'Categories', href: '/categories', icon: 'FolderOpen' },
       { name: 'Users', href: '/users', icon: 'Users' },
     ]
   }
 
-  // Regular users only get basic access
-  return baseNavigation
+  // Regular users only get access to products
+  return [
+    { name: 'Products', href: '/products', icon: 'Package' },
+  ]
 }
 
 const getIcon = (iconName) => {

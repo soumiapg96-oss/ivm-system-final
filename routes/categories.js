@@ -12,7 +12,7 @@ const {
 } = require('../controllers/categoryController');
 
 // Import middleware
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, requireRole } = require('../middleware/auth');
 
 // Apply authentication middleware to all routes
 router.use(authenticateToken);
@@ -192,7 +192,7 @@ router.get('/', getAllCategories);
  *       500:
  *         description: Internal server error
  */
-router.get('/all', getAllCategoriesWithCount);
+router.get('/all', requireRole('admin'), getAllCategoriesWithCount);
 
 /**
  * @swagger
@@ -272,7 +272,7 @@ router.get('/:id', getCategoryById);
  *       500:
  *         description: Internal server error
  */
-router.post('/', createCategory);
+router.post('/', requireRole('admin'), createCategory);
 
 /**
  * @swagger
@@ -321,7 +321,7 @@ router.post('/', createCategory);
  *       500:
  *         description: Internal server error
  */
-router.put('/:id', updateCategory);
+router.put('/:id', requireRole('admin'), updateCategory);
 
 /**
  * @swagger
@@ -350,6 +350,6 @@ router.put('/:id', updateCategory);
  *       500:
  *         description: Internal server error
  */
-router.delete('/:id', deleteCategory);
+router.delete('/:id', requireRole('admin'), deleteCategory);
 
 module.exports = router;

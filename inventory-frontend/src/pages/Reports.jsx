@@ -6,10 +6,12 @@ import {
   Package, 
   DollarSign,
   Download,
-  RefreshCw
+  RefreshCw,
+  Filter,
+  Calendar
 } from 'lucide-react'
 import { useToast } from '../contexts/ToastContext'
-import { reportsAPI } from '../services/api'
+import { reportsAPI, categoriesAPI, productsAPI } from '../services/api'
 import { formatCurrency } from '../lib/utils'
 
 export function Reports() {
@@ -17,22 +19,60 @@ export function Reports() {
   const [inventoryValue, setInventoryValue] = useState([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('stock-levels')
+  const [summary, setSummary] = useState({
+    totalProducts: 0,
+    inStock: 0,
+    lowStock: 0,
+    outOfStock: 0
+  })
+  const [filters, setFilters] = useState({
+    startDate: '',
+    endDate: '',
+    categoryId: '',
+    productId: ''
+  })
+  const [categories, setCategories] = useState([])
+  const [showFilters, setShowFilters] = useState(false)
 
-  const { error } = useToast()
+  const { success, error } = useToast()
 
   useEffect(() => {
     fetchReports()
-  }, [])
+    fetchCategories()
+  }, [filters])
+
+  const fetchCategories = async () => {
+    try {
+      const response = await categoriesAPI.getAll()
+      setCategories(response.data.data || [])
+    } catch (err) {
+      console.error('Failed to fetch categories:', err)
+    }
+  }
 
   const fetchReports = async () => {
     try {
       setLoading(true)
+      
+      // Fetch reports summary with filters
+      const summaryResponse = await reportsAPI.getReportsSummary(filters)
+      const summaryData = summaryResponse.data.summary
+      
+      // Fetch detailed reports
       const [stockResponse, valueResponse] = await Promise.all([
         reportsAPI.getStockLevels(),
         reportsAPI.getInventoryValue()
       ])
-      setStockLevels(stockResponse.data.stockLevels || [])
-      setInventoryValue(valueResponse.data.inventoryValue || [])
+      
+      setSummary({
+        totalProducts: summaryData.totalProducts || 0,
+        inStock: summaryData.inStock || 0,
+        lowStock: summaryData.lowStock || 0,
+        outOfStock: summaryData.outOfStock || 0
+      })
+      
+      setStockLevels(stockResponse.data.products || [])
+      setInventoryValue(valueResponse.data.categories || [])
     } catch (err) {
       error('Failed to fetch reports')
     } finally {
@@ -58,23 +98,108 @@ export function Reports() {
   }
 
   const exportToCSV = (data, filename) => {
-    const csvContent = "data:text/csv;charset=utf-8," + 
-      data.map(row => Object.values(row).join(",")).join("\n")
-    const encodedUri = encodeURI(csvContent)
-    const link = document.createElement("a")
-    link.setAttribute("href", encodedUri)
-    link.setAttribute("download", `${filename}.csv`)
+    if (!data || data.length === 0) {
+      error('No data to export')
+      return
+    }
+
+    // Get headers from first object
+    const headers = Object.keys(data[0])
+    
+    // Create CSV content
+    const csvContent = [
+      headers.join(','),
+      ...data.map(row => 
+        headers.map(header => {
+          const value = row[header]
+          // Handle values that need quotes (contain commas, quotes, or newlines)
+          if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
+            return `"${value.replace(/"/g, '""')}"`
+          }
+          return value
+        }).join(',')
+      )
+    ].join('\n')
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    const url = URL.createObjectURL(blob)
+    link.setAttribute('href', url)
+    link.setAttribute('download', `${filename}.csv`)
+    link.style.visibility = 'hidden'
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    
+    success('Report exported successfully')
   }
 
-  const totalProducts = stockLevels.length
-  const outOfStock = stockLevels.filter(p => p.quantity === 0).length
-  const lowStock = stockLevels.filter(p => p.quantity > 0 && p.quantity <= (p.minStockLevel || 5)).length
-  const inStock = stockLevels.filter(p => p.quantity > (p.minStockLevel || 5)).length
+  const exportToExcel = (data, filename) => {
+    if (!data || data.length === 0) {
+      error('No data to export')
+      return
+    }
 
-  const totalValue = inventoryValue.reduce((sum, category) => sum + (category.totalValue || 0), 0)
+    // Create Excel-like format with proper headers and styling
+    const headers = Object.keys(data[0])
+    
+    // Create Excel content with BOM for proper encoding
+    const excelContent = [
+      '\ufeff', // BOM for UTF-8
+      headers.join('\t'),
+      ...data.map(row => 
+        headers.map(header => {
+          const value = row[header]
+          // Handle values that need quotes (contain tabs, quotes, or newlines)
+          if (typeof value === 'string' && (value.includes('\t') || value.includes('"') || value.includes('\n'))) {
+            return `"${value.replace(/"/g, '""')}"`
+          }
+          return value
+        }).join('\t')
+      )
+    ].join('\n')
+
+    const blob = new Blob([excelContent], { type: 'application/vnd.ms-excel;charset=utf-8;' })
+    const link = document.createElement('a')
+    const url = URL.createObjectURL(blob)
+    link.setAttribute('href', url)
+    link.setAttribute('download', `${filename}.xls`)
+    link.style.visibility = 'hidden'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    
+    success('Excel report exported successfully')
+  }
+
+  const exportToPDF = (data, filename) => {
+    if (!data || data.length === 0) {
+      error('No data to export')
+      return
+    }
+
+    // For now, we'll show a message
+    // In a real app, you'd use a library like jsPDF
+    success('PDF export feature coming soon')
+  }
+
+  const handleFilterChange = (key, value) => {
+    setFilters(prev => ({
+      ...prev,
+      [key]: value
+    }))
+  }
+
+  const clearFilters = () => {
+    setFilters({
+      startDate: '',
+      endDate: '',
+      categoryId: '',
+      productId: ''
+    })
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -90,16 +215,80 @@ export function Reports() {
                 View inventory reports and analytics
               </p>
             </div>
-            <button
-              onClick={fetchReports}
-              disabled={loading}
-              className="mt-4 sm:mt-0 inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors duration-200 disabled:opacity-50"
-            >
-              <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-              Refresh
-            </button>
+            <div className="flex space-x-2 mt-4 sm:mt-0">
+              <button
+                onClick={() => setShowFilters(!showFilters)}
+                className="inline-flex items-center px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white font-medium rounded-lg transition-colors duration-200"
+              >
+                <Filter className="w-4 h-4 mr-2" />
+                Filters
+              </button>
+              <button
+                onClick={fetchReports}
+                disabled={loading}
+                className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors duration-200 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+            </div>
           </div>
         </div>
+
+        {/* Filters */}
+        {showFilters && (
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 mb-6 p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Start Date
+                </label>
+                <input
+                  type="date"
+                  value={filters.startDate}
+                  onChange={(e) => handleFilterChange('startDate', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  End Date
+                </label>
+                <input
+                  type="date"
+                  value={filters.endDate}
+                  onChange={(e) => handleFilterChange('endDate', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Category
+                </label>
+                <select
+                  value={filters.categoryId}
+                  onChange={(e) => handleFilterChange('categoryId', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                >
+                  <option value="">All Categories</option>
+                  {categories.map(category => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-end">
+                <button
+                  onClick={clearFilters}
+                  className="w-full px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors duration-200"
+                >
+                  Clear Filters
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -110,7 +299,7 @@ export function Reports() {
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Products</p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">{totalProducts}</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{summary.totalProducts}</p>
               </div>
             </div>
           </div>
@@ -122,7 +311,7 @@ export function Reports() {
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600 dark:text-gray-400">In Stock</p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">{inStock}</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{summary.inStock}</p>
               </div>
             </div>
           </div>
@@ -134,7 +323,7 @@ export function Reports() {
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Low Stock</p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">{lowStock}</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{summary.lowStock}</p>
               </div>
             </div>
           </div>
@@ -146,7 +335,7 @@ export function Reports() {
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Out of Stock</p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">{outOfStock}</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{summary.outOfStock}</p>
               </div>
             </div>
           </div>
@@ -190,81 +379,73 @@ export function Reports() {
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                     Stock Levels Report
                   </h3>
-                  <button
-                    onClick={() => exportToCSV(stockLevels, 'stock-levels-report')}
-                    className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-600"
-                  >
-                    <Download className="w-4 h-4 mr-2" />
-                    Export CSV
-                  </button>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => exportToCSV(stockLevels, 'stock-levels-report')}
+                      className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-600"
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      Export CSV
+                    </button>
+                    <button
+                      onClick={() => exportToExcel(stockLevels, 'stock-levels-report.xlsx')}
+                      className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-600"
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      Export Excel
+                    </button>
+                  </div>
                 </div>
-
+                
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                    <thead className="bg-gray-50 dark:bg-gray-700">
+                    <thead className="bg-gray-50 dark:bg-gray-800">
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Product
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Category
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Quantity
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Min Stock
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Status
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Value
                         </th>
                       </tr>
                     </thead>
-                    <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                    <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
                       {stockLevels.map((product) => {
-                        const stockStatus = getStockStatus(product)
+                        const status = getStockStatus(product)
                         return (
-                          <tr key={product.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="flex items-center">
-                                <div className="flex-shrink-0 h-8 w-8">
-                                  <div className="h-8 w-8 rounded-lg bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-                                    <Package className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                                  </div>
-                                </div>
-                                <div className="ml-3">
-                                  <div className="text-sm font-medium text-gray-900 dark:text-white">
-                                    {product.name}
-                                  </div>
-                                  <div className="text-sm text-gray-500 dark:text-gray-400">
-                                    {product.sku || 'No SKU'}
-                                  </div>
-                                </div>
-                              </div>
+                          <tr key={product.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
+                              {product.name}
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                              {product.category?.name || '-'}
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                              {product.category_name}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
                               {product.quantity}
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                              {product.minStockLevel || 5}
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                              {product.low_stock_threshold || 5}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
-                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${stockStatus.bg} ${stockStatus.color} ${stockStatus.border}`}>
-                                {getStatusIcon(stockStatus.status)}
-                                <span className="ml-1">
-                                  {stockStatus.status === 'out' ? 'Out of Stock' : 
-                                   stockStatus.status === 'low' ? 'Low Stock' : 'In Stock'}
-                                </span>
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${status.bg} ${status.color} ${status.border}`}>
+                                {getStatusIcon(status.status)}
+                                <span className="ml-1">{status.status === 'out' ? 'Out of Stock' : status.status === 'low' ? 'Low Stock' : 'In Stock'}</span>
                               </span>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                              {formatCurrency(product.price * product.quantity)}
+                              {formatCurrency(product.total_value || 0)}
                             </td>
                           </tr>
                         )
@@ -279,94 +460,67 @@ export function Reports() {
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                     Inventory Valuation Report
                   </h3>
-                  <button
-                    onClick={() => exportToCSV(inventoryValue, 'inventory-value-report')}
-                    className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-600"
-                  >
-                    <Download className="w-4 h-4 mr-2" />
-                    Export CSV
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  {/* Summary Card */}
-                  <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-6 text-white">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-blue-100 text-sm font-medium">Total Inventory Value</p>
-                        <p className="text-3xl font-bold">{formatCurrency(totalValue)}</p>
-                      </div>
-                      <div className="p-3 bg-white/20 rounded-lg">
-                        <DollarSign className="h-8 w-8" />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Chart Placeholder */}
-                  <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-                    <div className="flex items-center justify-center h-48 text-gray-500 dark:text-gray-400">
-                      <div className="text-center">
-                        <BarChart3 className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                        <p>Chart visualization would go here</p>
-                      </div>
-                    </div>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => exportToCSV(inventoryValue, 'inventory-value-report')}
+                      className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-600"
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      Export CSV
+                    </button>
+                    <button
+                      onClick={() => exportToExcel(inventoryValue, 'inventory-value-report.xlsx')}
+                      className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-600"
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      Export Excel
+                    </button>
                   </div>
                 </div>
-
-                {/* Category Breakdown */}
-                <div className="mt-8">
-                  <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-                    Value by Category
-                  </h4>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                      <thead className="bg-gray-50 dark:bg-gray-700">
-                        <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                            Category
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                            Products Count
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                            Total Value
-                          </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                            Percentage
-                          </th>
+                
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead className="bg-gray-50 dark:bg-gray-800">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          Category
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          Products
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          Total Quantity
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          Total Value
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          Average Price
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
+                      {inventoryValue.map((category) => (
+                        <tr key={category.category_id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
+                            {category.category_name}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                            {category.product_count}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                            {category.total_quantity}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                            {formatCurrency(category.total_value || 0)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                            {formatCurrency(category.average_price || 0)}
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                        {inventoryValue.map((category) => (
-                          <tr key={category.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="flex items-center">
-                                <div className="flex-shrink-0 h-8 w-8">
-                                  <div className="h-8 w-8 rounded-lg bg-green-100 dark:bg-green-900 flex items-center justify-center">
-                                    <Package className="h-4 w-4 text-green-600 dark:text-green-400" />
-                                  </div>
-                                </div>
-                                <div className="ml-3">
-                                  <div className="text-sm font-medium text-gray-900 dark:text-white">
-                                    {category.name}
-                                  </div>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                              {category.productsCount || 0}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                              {formatCurrency(category.totalValue || 0)}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                              {totalValue > 0 ? `${((category.totalValue || 0) / totalValue * 100).toFixed(1)}%` : '0%'}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}

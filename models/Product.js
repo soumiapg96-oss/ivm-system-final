@@ -406,6 +406,65 @@ class Product {
       }
     };
   }
+
+  static async getInventoryTrends() {
+    // For now, return empty array - in a real app, this would query a trends/history table
+    return [];
+  }
+
+  static async getReportsSummary(filters = {}) {
+    const { startDate, endDate, categoryId, productId } = filters;
+    
+    let whereConditions = ['p.deleted_at IS NULL'];
+    let values = [];
+    let valueIndex = 1;
+
+    if (startDate) {
+      whereConditions.push(`p.created_at >= $${valueIndex}`);
+      values.push(startDate);
+      valueIndex++;
+    }
+
+    if (endDate) {
+      whereConditions.push(`p.created_at <= $${valueIndex}`);
+      values.push(endDate);
+      valueIndex++;
+    }
+
+    if (categoryId) {
+      whereConditions.push(`p.category_id = $${valueIndex}`);
+      values.push(categoryId);
+      valueIndex++;
+    }
+
+    if (productId) {
+      whereConditions.push(`p.id = $${valueIndex}`);
+      values.push(productId);
+      valueIndex++;
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    const query = `
+      SELECT 
+        COUNT(*) as total_products,
+        COUNT(CASE WHEN quantity > 0 THEN 1 END) as in_stock,
+        COUNT(CASE WHEN quantity > 0 AND quantity <= low_stock_threshold THEN 1 END) as low_stock,
+        COUNT(CASE WHEN quantity = 0 THEN 1 END) as out_of_stock,
+        SUM(quantity * price) as total_value
+      FROM products p
+      ${whereClause}
+    `;
+    
+    const result = await db.query(query, values);
+    return result.rows[0] ? snakeToCamel(result.rows[0]) : {
+      totalProducts: 0,
+      inStock: 0,
+      lowStock: 0,
+      outOfStock: 0,
+      totalValue: 0
+    };
+  }
 }
 
 module.exports = Product;

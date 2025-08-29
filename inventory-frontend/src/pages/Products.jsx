@@ -25,19 +25,16 @@ import { productsAPI, categoriesAPI } from '../services/api'
 import { formatCurrency } from '../lib/utils'
 
 const QUANTITY_REASONS = [
-  'Stock Adjustment',
-  'Sale',
-  'Purchase',
-  'Return',
-  'Damage',
-  'Expiry',
-  'Transfer',
-  'Other'
+  { label: 'Purchase', value: 'purchase' },
+  { label: 'Sale', value: 'sale' },
+  { label: 'Adjustment', value: 'adjustment' },
+  { label: 'Damage', value: 'damage' }
 ]
 
 export function Products() {
   const [products, setProducts] = useState([])
   const [categories, setCategories] = useState([])
+  const [categoriesLoading, setCategoriesLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
@@ -114,11 +111,15 @@ export function Products() {
 
   const fetchCategories = async () => {
     try {
+      setCategoriesLoading(true)
       const response = await categoriesAPI.getAllWithCount()
-      setCategories(response.data.categories || [])
+      // The API returns data.data for categories with count
+      setCategories(response.data.data || [])
     } catch (err) {
       console.error('Failed to fetch categories:', err)
       error('Failed to fetch categories')
+    } finally {
+      setCategoriesLoading(false)
     }
   }
 
@@ -181,11 +182,28 @@ export function Products() {
 
   const handleQuantityUpdate = async (e) => {
     e.preventDefault()
+    
+    // Validate quantity
+    const newQuantity = parseInt(quantityData.quantity)
+    if (isNaN(newQuantity) || newQuantity < 0) {
+      error('Please enter a valid quantity (must be a positive number)')
+      return
+    }
+    
+    if (!quantityData.reason) {
+      error('Please select a reason for the quantity update')
+      return
+    }
+    
     try {
+      // Calculate the quantity change (difference)
+      const currentQuantity = selectedProduct.quantity || 0
+      const quantityChange = newQuantity - currentQuantity
+      
       const quantityUpdateData = {
-        quantity: parseInt(quantityData.quantity),
-        reason: quantityData.reason,
-        notes: quantityData.notes
+        quantityChange: quantityChange,
+        reasonCode: quantityData.reason,
+        reasonDescription: quantityData.notes || ''
       }
       
       await productsAPI.updateQuantity(selectedProduct.id, quantityUpdateData)
@@ -285,24 +303,30 @@ export function Products() {
       
       const products = response.data.products || []
       
-      // Create CSV content
-      const headers = ['Name', 'SKU', 'Category', 'Price', 'Quantity', 'Min Stock', 'Status', 'Description']
+      if (products.length === 0) {
+        error('No products to export')
+        return
+      }
+      
+      // Create CSV content with proper data
+      const headers = ['Name', 'SKU', 'Category', 'Price', 'Quantity', 'Min Stock', 'Status', 'Total Value', 'Description']
       const csvContent = [
         headers.join(','),
         ...products.map(product => [
-          `"${product.name}"`,
+          `"${product.name || ''}"`,
           `"${product.sku || ''}"`,
-          `"${getCategoryName(product.categoryId)}"`,
-          product.price,
-          product.quantity,
-          product.lowStockThreshold,
+          `"${getCategoryName(product.categoryId) || ''}"`,
+          product.price || 0,
+          product.quantity || 0,
+          product.lowStockThreshold || 5,
           getStockStatus(product.quantity, product.lowStockThreshold).label,
-          `"${product.description || ''}"`
+          (product.price * product.quantity) || 0,
+          `"${(product.description || '').replace(/"/g, '""')}"`
         ].join(','))
       ].join('\n')
       
       // Create and download file
-      const blob = new Blob([csvContent], { type: 'text/csv' })
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
@@ -312,7 +336,7 @@ export function Products() {
       document.body.removeChild(a)
       window.URL.revokeObjectURL(url)
       
-      success('Products exported successfully')
+      success(`Exported ${products.length} products successfully`)
     } catch (err) {
       console.error('Failed to export products:', err)
       error('Failed to export products')
@@ -486,35 +510,35 @@ export function Products() {
               <div className="rounded-md border">
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead>Product</TableHead>
-                      <TableHead>SKU</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead>Price</TableHead>
-                      <TableHead>Quantity</TableHead>
-                      <TableHead>Status</TableHead>
-                      {isAdmin && <TableHead>Actions</TableHead>}
+                    <TableRow className="bg-gray-50 dark:bg-gray-800">
+                      <TableHead className="font-semibold text-gray-900 dark:text-white">Product</TableHead>
+                      <TableHead className="font-semibold text-gray-900 dark:text-white">SKU</TableHead>
+                      <TableHead className="font-semibold text-gray-900 dark:text-white">Category</TableHead>
+                      <TableHead className="font-semibold text-gray-900 dark:text-white">Price</TableHead>
+                      <TableHead className="font-semibold text-gray-900 dark:text-white">Quantity</TableHead>
+                      <TableHead className="font-semibold text-gray-900 dark:text-white">Status</TableHead>
+                      {isAdmin && <TableHead className="font-semibold text-gray-900 dark:text-white text-right">Actions</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {products.map((product) => {
                       const stockStatus = getStockStatus(product.quantity, product.lowStockThreshold)
                       return (
-                        <TableRow key={product.id}>
+                        <TableRow key={product.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
                           <TableCell>
                             <div>
-                              <div className="font-medium">{product.name}</div>
-                              <div className="text-sm text-muted-foreground">
+                              <div className="font-medium text-gray-900 dark:text-white">{product.name}</div>
+                              <div className="text-sm text-gray-500 dark:text-gray-400">
                                 {product.description}
                               </div>
                             </div>
                           </TableCell>
-                          <TableCell className="font-mono">{product.sku}</TableCell>
-                          <TableCell>{getCategoryName(product.categoryId)}</TableCell>
-                          <TableCell>{formatCurrency(product.price)}</TableCell>
+                          <TableCell className="font-mono text-gray-700 dark:text-gray-300">{product.sku}</TableCell>
+                          <TableCell className="text-gray-700 dark:text-gray-300">{getCategoryName(product.categoryId)}</TableCell>
+                          <TableCell className="font-medium text-gray-900 dark:text-white">{formatCurrency(product.price)}</TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
-                              <span className="font-medium">{product.quantity}</span>
+                              <span className="font-medium text-gray-900 dark:text-white">{product.quantity}</span>
                               {stockStatus.status === 'low-stock' && (
                                 <AlertTriangle className="h-4 w-4 text-yellow-500" />
                               )}
@@ -526,29 +550,34 @@ export function Products() {
                             </Badge>
                           </TableCell>
                           {isAdmin && (
-                            <TableCell>
-                              <div className="flex items-center gap-2">
+                            <TableCell className="text-right">
+                              <div className="flex items-center justify-end gap-1">
                                 <Button
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => openEditModal(product)}
+                                  className="h-8 w-8 p-0 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                  title="Edit Product"
                                 >
-                                  <Edit className="h-4 w-4 mr-1" />
-                                  Edit
+                                  <Edit className="h-4 w-4" />
                                 </Button>
                                 <Button
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => openQuantityModal(product)}
+                                  className="h-8 w-8 p-0 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                  title="Update Quantity"
                                 >
-                                  Update Qty
+                                  <Package className="h-4 w-4" />
                                 </Button>
                                 <Button
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => openDeleteModal(product)}
+                                  className="h-8 w-8 p-0 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                  title="Delete Product"
                                 >
-                                  <Trash2 className="h-4 w-4" />
+                                  <Trash2 className="h-4 w-4 text-red-500" />
                                 </Button>
                               </div>
                             </TableCell>
@@ -667,14 +696,20 @@ export function Products() {
               onChange={(e) => setFormData({...formData, categoryId: e.target.value})}
               className="w-full px-3 py-2 border border-input rounded-md bg-background"
               required
+              disabled={categoriesLoading}
             >
-              <option value="">Select category</option>
+              <option value="">
+                {categoriesLoading ? 'Loading categories...' : 'Select category'}
+              </option>
               {categories.map((category) => (
                 <option key={category.id} value={category.id}>
                   {category.name}
                 </option>
               ))}
             </select>
+            {categoriesLoading && (
+              <p className="text-sm text-gray-500">Loading categories...</p>
+            )}
           </div>
           <div className="flex justify-end space-x-3 pt-4">
             <Button type="button" variant="outline" onClick={() => setShowCreateModal(false)}>
@@ -756,14 +791,20 @@ export function Products() {
               onChange={(e) => setFormData({...formData, categoryId: e.target.value})}
               className="w-full px-3 py-2 border border-input rounded-md bg-background"
               required
+              disabled={categoriesLoading}
             >
-              <option value="">Select category</option>
+              <option value="">
+                {categoriesLoading ? 'Loading categories...' : 'Select category'}
+              </option>
               {categories.map((category) => (
                 <option key={category.id} value={category.id}>
                   {category.name}
                 </option>
               ))}
             </select>
+            {categoriesLoading && (
+              <p className="text-sm text-gray-500">Loading categories...</p>
+            )}
           </div>
           <div className="flex justify-end space-x-3 pt-4">
             <Button type="button" variant="outline" onClick={() => setShowEditModal(false)}>
@@ -813,8 +854,8 @@ export function Products() {
             >
               <option value="">Select reason</option>
               {QUANTITY_REASONS.map((reason) => (
-                <option key={reason} value={reason}>
-                  {reason}
+                <option key={reason.value} value={reason.value}>
+                  {reason.label}
                 </option>
               ))}
             </select>

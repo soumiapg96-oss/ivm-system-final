@@ -4,19 +4,19 @@ const { v4: uuidv4 } = require('uuid');
 
 class User {
   static async create(userData) {
-    const { email, password, role = 'user' } = userData;
+    const { first_name, last_name, email, phone, password, role = 'user' } = userData;
     
     // Hash password
     const saltRounds = 10;
     const passwordHash = await bcrypt.hash(password, saltRounds);
     
     const query = `
-      INSERT INTO users (id, email, password_hash, role, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, NOW(), NOW())
-      RETURNING id, email, role, created_at, updated_at
+      INSERT INTO users (id, first_name, last_name, email, phone, password_hash, role, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+      RETURNING id, first_name, last_name, email, phone, role, created_at, updated_at
     `;
     
-    const values = [uuidv4(), email, passwordHash, role];
+    const values = [uuidv4(), first_name, last_name, email, phone, passwordHash, role];
     
     try {
       const result = await db.query(query, values);
@@ -37,7 +37,7 @@ class User {
 
   static async findById(id) {
     const query = `
-      SELECT id, email, role, created_at, updated_at 
+      SELECT id, first_name, last_name, email, phone, role, created_at, updated_at 
       FROM users WHERE id = $1
     `;
     const result = await db.query(query, [id]);
@@ -48,7 +48,7 @@ class User {
     const offset = (page - 1) * limit;
     
     const query = `
-      SELECT id, email, role, created_at, updated_at
+      SELECT id, first_name, last_name, email, phone, role, created_at, updated_at
       FROM users
       ORDER BY created_at DESC
       LIMIT $1 OFFSET $2
@@ -73,18 +73,21 @@ class User {
   }
 
   static async update(id, updateData) {
-    const { email, role } = updateData;
+    const { first_name, last_name, email, phone, role } = updateData;
     
     const query = `
       UPDATE users 
-      SET email = COALESCE($2, email),
-          role = COALESCE($3, role),
+      SET first_name = COALESCE($2, first_name),
+          last_name = COALESCE($3, last_name),
+          email = COALESCE($4, email),
+          phone = COALESCE($5, phone),
+          role = COALESCE($6, role),
           updated_at = NOW()
       WHERE id = $1
-      RETURNING id, email, role, created_at, updated_at
+      RETURNING id, first_name, last_name, email, phone, role, created_at, updated_at
     `;
     
-    const values = [id, email, role];
+    const values = [id, first_name, last_name, email, phone, role];
     const result = await db.query(query, values);
     return result.rows[0];
   }
@@ -95,19 +98,37 @@ class User {
     return result.rows[0];
   }
 
-  static async changePassword(id, newPassword) {
-    const saltRounds = 10;
-    const passwordHash = await bcrypt.hash(newPassword, saltRounds);
-    
-    const query = `
-      UPDATE users 
-      SET password_hash = $2, updated_at = NOW()
-      WHERE id = $1
-      RETURNING id
-    `;
-    
-    const result = await db.query(query, [id, passwordHash]);
-    return result.rows[0];
+  static async changePassword(userId, currentPassword, newPassword) {
+    // First, get the user to verify current password
+    const user = await this.findById(userId);
+    if (!user) {
+      return false;
+    }
+
+    // Get the password hash from the database
+    const passwordQuery = 'SELECT password_hash FROM users WHERE id = $1';
+    const passwordResult = await db.query(passwordQuery, [userId]);
+    const passwordHash = passwordResult.rows[0]?.password_hash;
+
+    if (!passwordHash) {
+      return false;
+    }
+
+    // Verify current password
+    const isValidPassword = await bcrypt.compare(currentPassword, passwordHash);
+    if (!isValidPassword) {
+      return false;
+    }
+
+    // Hash new password
+    const saltRounds = 12;
+    const newPasswordHash = await bcrypt.hash(newPassword, saltRounds);
+
+    // Update password
+    const query = 'UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2';
+    await db.query(query, [newPasswordHash, userId]);
+
+    return true;
   }
 
   static async verifyPassword(password, passwordHash) {

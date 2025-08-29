@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { 
   Menu, 
   Bell, 
@@ -25,8 +26,9 @@ import { useTheme } from '../../contexts/ThemeContext'
 
 export function Navbar({ onMenuClick }) {
   const { user, logout } = useAuth()
-  const { darkMode, toggleDarkMode } = useTheme()
+  const { darkMode, toggleTheme } = useTheme()
   const [searchQuery, setSearchQuery] = useState('')
+  const navigate = useNavigate()
 
   const handleLogout = async () => {
     try {
@@ -60,19 +62,8 @@ export function Navbar({ onMenuClick }) {
       {/* Separator */}
       <div className="h-6 w-px bg-border lg:hidden" />
 
-      {/* Search */}
-      <div className="flex flex-1 gap-x-4 self-stretch lg:gap-x-6">
-        <div className="relative flex flex-1">
-          <Search className="pointer-events-none absolute inset-y-0 left-0 h-full w-5 text-muted-foreground pl-3" />
-          <Input
-            type="search"
-            placeholder="Search..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
-          />
-        </div>
-      </div>
+      {/* Spacer */}
+      <div className="flex flex-1" />
 
       {/* Right side */}
       <div className="flex items-center gap-x-4 lg:gap-x-6">
@@ -87,7 +78,7 @@ export function Navbar({ onMenuClick }) {
         <Button
           variant="ghost"
           size="icon"
-          onClick={toggleDarkMode}
+          onClick={toggleTheme}
         >
           {darkMode ? (
             <Sun className="h-6 w-6" />
@@ -120,7 +111,7 @@ export function Navbar({ onMenuClick }) {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/profile')}>
               <User className="mr-2 h-4 w-4" />
               <span>Profile</span>
             </DropdownMenuItem>
